@@ -1,6 +1,7 @@
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 #include <time.h>
+#include <math.h>
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
@@ -8,6 +9,9 @@
 #define BACKWARD -1
 #define STAND 0 
 #define FORWARD 1
+
+#define FOV (M_PI / 3.0)
+#define TILE_SIZE 64
 
 struct Vector { int x; int y; };
 typedef struct Vector Vector;
@@ -18,7 +22,7 @@ int create_window(SDL_Window **window, SDL_Renderer **renderer) {
         return 1;
     }
 
-    *window = SDL_CreateWindow("Name", 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0);
+    *window = SDL_CreateWindow("Raycaster", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, 0);
     if (!*window) {
         SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError());
         SDL_Quit();
@@ -49,13 +53,25 @@ int main() {
     bool running = true;
     SDL_Event event;
 
-    SDL_Rect player = {100, 100, 50, 50};
-    SDL_Rect square = {200, 200, 100, 100};
+    int map[8][8] = {
+        {1,1,1,1,1,1,1,1},
+        {1,0,0,0,0,0,0,1},
+        {1,0,1,0,1,0,0,1},
+        {1,0,1,0,1,0,0,1},
+        {1,0,0,0,0,0,0,1},
+        {1,0,1,0,1,0,0,1},
+        {1,0,0,0,0,0,0,1},
+        {1,1,1,1,1,1,1,1},
+    };
 
     long previous_frame_time = get_current_time_in_ms();
 
-    bool collided = false;
-    const int speed = 1;
+    const int speed = 3;
+    const float rotation_speed = 0.025;
+
+    float player_angle = 0;
+    float player_x = TILE_SIZE + TILE_SIZE / 2;
+    float player_y = TILE_SIZE + TILE_SIZE / 2;
 
     create_window(&window, &renderer);
 
@@ -75,38 +91,46 @@ int main() {
                 running = false;
         }
 
+        // cleaning the screen
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-        SDL_RenderFillRect(renderer, &player);
-        SDL_RenderFillRect(renderer, &square);
+        // rendering
+        for (int pixel = 0; pixel < SCREEN_WIDTH; ++pixel) {
+            bool hit_wall = false;
+            int wall_distance = 0;
+            float ray_angle = (player_angle - FOV/2.0) + ((float)pixel / SCREEN_WIDTH) * FOV;//(FOV / 2) - ((float)FOV / SCREEN_WIDTH) * pixel;
 
-        // input
-        const Uint8 *keys = SDL_GetKeyboardState(NULL);
-        if (keys[SDL_SCANCODE_ESCAPE]) running = false;
-        if (keys[SDL_SCANCODE_D]) movement_vector.x = FORWARD;
-        if (keys[SDL_SCANCODE_A]) movement_vector.x = BACKWARD;
-        if (keys[SDL_SCANCODE_W]) movement_vector.y = BACKWARD;
-        if (keys[SDL_SCANCODE_S]) movement_vector.y = FORWARD; 
-        
-        // collision
-        if (player.x + player.w > square.x && player.x < square.x + square.w &&
-            player.y + player.h > square.y && player.y < square.y + square.h) { // check collision with an enemy
-            collided = true;
-        } else {
-            collided = false;
+            while(!hit_wall && wall_distance < 1000) {
+                wall_distance++;
+                int y = (player_y + sin(ray_angle) * wall_distance) / TILE_SIZE;
+                int x = (player_x + cos(ray_angle) * wall_distance) / TILE_SIZE;
+
+                if (map[y][x] == 1) {
+                    hit_wall = true;
+                }
+
+            }
+
+            int height = SCREEN_HEIGHT * TILE_SIZE / wall_distance;
+            int draw_start = SCREEN_HEIGHT / 2 - height;
+            int draw_end = SCREEN_HEIGHT / 2 + height;
+            int color = wall_distance >= 255 ? 0 : 255 - wall_distance; // the farther the wall the darker it is
+            SDL_SetRenderDrawColor(renderer, color, color, color, 255);
+            SDL_RenderDrawLine(renderer, pixel, draw_start, pixel, draw_end);
         }
 
-        // check collision with the walls and recalculate the movement vector
-        movement_vector.x = movement_vector.x == FORWARD && player.x + player.w > SCREEN_WIDTH ? STAND : movement_vector.x;
-        movement_vector.x = movement_vector.x == BACKWARD && player.x < 0 ? STAND : movement_vector.x;
-        movement_vector.y = movement_vector.y == FORWARD && player.y + player.h > SCREEN_HEIGHT ? STAND : movement_vector.y;
-        movement_vector.y = movement_vector.y == BACKWARD && player.y < 0 ? STAND : movement_vector.y;
-
         // moving the player
-        player.x += movement_vector.x * current_frame_speed;
-        player.y += movement_vector.y * current_frame_speed;
+        const Uint8 *keys = SDL_GetKeyboardState(NULL);
+        if (keys[SDL_SCANCODE_W]) {
+            player_x += cos(player_angle) * speed;
+            player_y += sin(player_angle) * speed;
+        } if (keys[SDL_SCANCODE_S]) {
+            player_x -= cos(player_angle) * speed;
+            player_y -= sin(player_angle) * speed;
+        }
+        if (keys[SDL_SCANCODE_A]) player_angle -= rotation_speed;//player_y -= 1 * speed;
+        if (keys[SDL_SCANCODE_D]) player_angle += rotation_speed;//player_y += 1 * speed;
 
         SDL_RenderPresent(renderer);
         SDL_Delay(16); // ~60 FPS
