@@ -67,7 +67,7 @@ int main() {
     long previous_frame_time = get_current_time_in_ms();
 
     const int speed = 3;
-    const float rotation_speed = 0.025;
+    const float rotation_speed = 0.05;
 
     float player_angle = 0;
     float player_x = TILE_SIZE + TILE_SIZE / 2;
@@ -101,7 +101,7 @@ int main() {
             int wall_distance = 0;
             float ray_angle = (player_angle - FOV/2.0) + ((float)pixel / SCREEN_WIDTH) * FOV;//(FOV / 2) - ((float)FOV / SCREEN_WIDTH) * pixel;
 
-            while(!hit_wall && wall_distance < 1000) {
+            while (!hit_wall && wall_distance < 1000) {
                 wall_distance++;
                 int y = (player_y + sin(ray_angle) * wall_distance) / TILE_SIZE;
                 int x = (player_x + cos(ray_angle) * wall_distance) / TILE_SIZE;
@@ -109,7 +109,6 @@ int main() {
                 if (map[y][x] == 1) {
                     hit_wall = true;
                 }
-
             }
 
             int height = SCREEN_HEIGHT * TILE_SIZE / wall_distance;
@@ -122,12 +121,16 @@ int main() {
 
         // moving the player
         const Uint8 *keys = SDL_GetKeyboardState(NULL);
-        if (keys[SDL_SCANCODE_W]) {
-            player_x += cos(player_angle) * speed;
-            player_y += sin(player_angle) * speed;
-        } if (keys[SDL_SCANCODE_S]) {
-            player_x -= cos(player_angle) * speed;
-            player_y -= sin(player_angle) * speed;
+
+        if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_S]) {
+            int direction = keys[SDL_SCANCODE_W] ? 1 : -1;
+            int updated_x = player_x + direction * cos(player_angle) * speed;
+            int updated_y = player_y + direction * sin(player_angle) * speed;
+
+            if (!map[updated_y / TILE_SIZE][updated_x / TILE_SIZE]) {
+                player_x = updated_x;
+                player_y = updated_y;
+            }
         }
         if (keys[SDL_SCANCODE_A]) player_angle -= rotation_speed;//player_y -= 1 * speed;
         if (keys[SDL_SCANCODE_D]) player_angle += rotation_speed;//player_y += 1 * speed;
