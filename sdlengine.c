@@ -9,9 +9,6 @@
 #define MAP_SIZE 8
 #define FOV (M_PI / 3.0)
 
-struct Vector { int x; int y; };
-typedef struct Vector Vector;
-
 int create_window(SDL_Window **window, SDL_Renderer **renderer) {
     if (SDL_Init(0) != 0) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
@@ -43,10 +40,14 @@ long get_current_time_in_ms() {
     return ms;
 }
 
-void render_vertical_line(int screen[], int x, int height) {
-    //SCREEN_HEIGHT / 2 - height
-    for (int h = height; h > 0; --h) {
-        screen[(SCREEN_HEIGHT / 2 - h) * SCREEN_WIDTH + x] = 0xFFFFFFFF;
+void render_vertical_line(int screen[], int x, int height, int r, int g, int b) {
+    for (int h = 2 * height; h > 0; --h) {
+        int screen_pixel_index = (SCREEN_HEIGHT / 2 - height + h) * SCREEN_WIDTH + x;
+        if (screen_pixel_index >= 0 && screen_pixel_index < SCREEN_WIDTH * SCREEN_HEIGHT) {
+            // converting from rgb to hex color representation
+            int color = r * (0xFF / 255) * 16*16*16*16 + g * (0xFF / 255) * 16*16 + b * (0xFF / 255);
+            screen[screen_pixel_index] = color;
+        }
     }
 }
 
@@ -57,7 +58,6 @@ int main() {
     SDL_Event event;
 
     int screen[SCREEN_WIDTH * SCREEN_HEIGHT];
-    memset(screen, 0xFF000000, sizeof(screen));
 
     const int map[MAP_SIZE][MAP_SIZE] = {
         {1,1,1,1,1,1,1,1},
@@ -100,8 +100,7 @@ int main() {
         }
 
         // cleaning the screen
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
+        memset(screen, 0xFF000000, sizeof(screen));
 
         // rendering
         bool enemy_rendered = false;
@@ -126,21 +125,10 @@ int main() {
                 }
             }
 
-            int height = wall_height_percentage * (SCREEN_HEIGHT * tile_size / wall_distance);// + 0.05 * (SCREEN_WIDTH - pixel);
-            // int draw_start = SCREEN_HEIGHT / 2 - height;
-            // int draw_end = SCREEN_HEIGHT / 2 + height;
-
-            int color = wall_distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - wall_distance / rendering_distance_percentage; // the farther the wall the darker it is
-            // SDL_SetRenderDrawColor(renderer, color, color, color, 255);
-            // SDL_RenderDrawLine(renderer, pixel, draw_start, pixel, draw_end);
-
-            render_vertical_line(screen, pixel, height);
-
-            // if (hit_enemy && !enemy_rendered) {
-            //     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-            //     SDL_RenderDrawLine(renderer, pixel, draw_start, pixel, draw_end);
-            //     enemy_rendered = true;
-            // }
+            int height = wall_height_percentage * (SCREEN_HEIGHT * tile_size / wall_distance);
+            // the farther the wall the darker it is
+            int color = wall_distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - wall_distance / rendering_distance_percentage;
+            render_vertical_line(screen, pixel, height, color, color, color);
         }
 
         // moving the player
@@ -159,13 +147,6 @@ int main() {
         if (keys[SDL_SCANCODE_A]) player_angle -= rotation_speed;
         if (keys[SDL_SCANCODE_D]) player_angle += rotation_speed;
 
-        // rendering minimap
-        // for (int y = 0; y < MAP_SIZE; ++y) {
-        //     for (int x = 0; x < MAP_SIZE; ++x) {
-
-        //     }
-        // }
-
         SDL_Texture *texture = SDL_CreateTexture(
             renderer,
             SDL_PIXELFORMAT_ARGB8888,
@@ -173,8 +154,30 @@ int main() {
             SCREEN_WIDTH, SCREEN_HEIGHT
         );
 
-        SDL_UpdateTexture(texture, NULL, screen, SCREEN_WIDTH * sizeof(int));
+        // rendering minimap
+        const int minimap_cell_size = 20;
+        int minimap_offset_x = SCREEN_WIDTH - MAP_SIZE * minimap_cell_size - 16;
+        int minimap_offset_y = SCREEN_HEIGHT - MAP_SIZE * minimap_cell_size - 16;
+        for (int y = 0; y < MAP_SIZE; ++y) {
+            for (int x = 0; x < MAP_SIZE; ++x) {
+                for (int h = 0; h < minimap_cell_size; ++h) {
+                    for (int w = 0; w < minimap_cell_size; ++w) {
+                        int color;
+                        if ((int)((player_x / tile_size) * minimap_cell_size)/3 == (x*minimap_cell_size+w)/3 && 
+                            (int)((player_y / tile_size) * minimap_cell_size)/3 == (y*minimap_cell_size+h)/3) {
+                            color = 0xFF0000;
+                        } else if (map[y][x] == 1) {
+                            color = 0x009900;
+                        } else {
+                            color = 0x000000;
+                        }
+                        screen[(minimap_offset_y+y*minimap_cell_size+h)*SCREEN_WIDTH+minimap_offset_x+x*minimap_cell_size+w] = color;
+                    }
+                }
+            }
+        }
 
+        SDL_UpdateTexture(texture, NULL, screen, SCREEN_WIDTH * sizeof(int));
         SDL_RenderCopyEx(
             renderer,
             texture,
