@@ -108,8 +108,8 @@ int main() {
 
     int screen[SCREEN_WIDTH * SCREEN_HEIGHT];
 
-    const int speed = 3;
-    const float rotation_speed = 0.05;
+    const float speed = 0.15;
+    const float rotation_speed = 0.0035;
 
     const int wall_color = 200;
     const float wall_height_percentage = 0.55;
@@ -129,7 +129,6 @@ int main() {
         long current_frame_time = get_current_time_in_ms();
         int delta_time = current_frame_time - previous_frame_time;
         previous_frame_time = current_frame_time;
-        int current_frame_speed = delta_time * speed;
 
         // quit the app if user closes the window
         while (SDL_PollEvent(&event)) {
@@ -174,17 +173,16 @@ int main() {
 
         if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_S]) {
             int direction = keys[SDL_SCANCODE_W] ? 1 : -1;
-            printf("%f\t%f\n", sin(player_angle), cos(player_angle));
-            float updated_x = player_x + direction * cos(player_angle) * speed;
-            float updated_y = player_y + direction * sin(player_angle) * speed;
+            float updated_x = player_x + direction * cos(player_angle) * speed * delta_time;
+            float updated_y = player_y + direction * sin(player_angle) * speed * delta_time;
 
             if (map[(int)(updated_y) / TILE_SIZE][(int)(updated_x) / TILE_SIZE] != 1) {
                 player_x = updated_x;
                 player_y = updated_y;
             }
         }
-        if (keys[SDL_SCANCODE_A]) player_angle -= rotation_speed;
-        if (keys[SDL_SCANCODE_D]) player_angle += rotation_speed;
+        if (keys[SDL_SCANCODE_A]) player_angle -= rotation_speed * delta_time;
+        if (keys[SDL_SCANCODE_D]) player_angle += rotation_speed * delta_time;
 
         SDL_Texture *texture = SDL_CreateTexture(
             renderer,
@@ -208,6 +206,6 @@ int main() {
         );
 
         SDL_RenderPresent(renderer);
-        SDL_Delay(16); // ~60 FPS
+        // SDL_Delay(16); // ~60 FPS
     }
 }
