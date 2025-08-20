@@ -6,8 +6,32 @@
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
 
-#define MAP_SIZE 8
+#define MAP_SIZE 20
 #define FOV (M_PI / 3.0)
+#define TILE_SIZE 48
+
+const int map[MAP_SIZE][MAP_SIZE] = {
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {1,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1},
+    {1,0,1,1,1,0,0,1,0,1,1,1,0,1,0,0,1,1,0,1},
+    {1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1,0,1},
+    {1,0,1,0,1,1,1,1,1,1,0,1,0,1,1,1,0,1,0,1},
+    {1,0,0,0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,0,1},
+    {1,1,1,0,1,0,1,1,0,1,1,1,1,1,0,1,0,1,1,1},
+    {1,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1},
+    {1,0,1,1,1,0,1,0,1,1,1,1,0,1,0,1,1,1,0,1},
+    {1,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,1},
+    {1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1},
+    {1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1},
+    {1,0,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,0,1},
+    {1,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,1},
+    {1,1,1,1,0,1,1,1,1,0,1,1,1,1,0,1,1,1,1,1},
+    {1,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1},
+    {1,0,1,1,0,1,0,1,1,1,1,1,0,1,0,1,1,0,1,1},
+    {1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1},
+    {1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1},
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
+};
 
 int create_window(SDL_Window **window, SDL_Renderer **renderer) {
     if (SDL_Init(0) != 0) {
@@ -40,13 +64,38 @@ long get_current_time_in_ms() {
     return ms;
 }
 
-void render_vertical_line(int screen[], int x, int height, int r, int g, int b) {
+void create_vertical_line(int screen[], int x, int height, int r, int g, int b) {
     for (int h = 2 * height; h > 0; --h) {
         int screen_pixel_index = (SCREEN_HEIGHT / 2 - height + h) * SCREEN_WIDTH + x;
         if (screen_pixel_index >= 0 && screen_pixel_index < SCREEN_WIDTH * SCREEN_HEIGHT) {
             // converting from rgb to hex color representation
             int color = r * (0xFF / 255) * 16*16*16*16 + g * (0xFF / 255) * 16*16 + b * (0xFF / 255);
             screen[screen_pixel_index] = color;
+        }
+    }
+}
+
+void create_minimap(float player_x, float player_y, int screen[]) {
+    const int minimap_cell_size = 4;
+    const int amount_of_pixels_for_player = 3;
+    int minimap_offset_x = SCREEN_WIDTH - MAP_SIZE * minimap_cell_size - 16;
+    int minimap_offset_y = SCREEN_HEIGHT - MAP_SIZE * minimap_cell_size - 16;
+    for (int y = 0; y < MAP_SIZE; ++y) {
+        for (int x = 0; x < MAP_SIZE; ++x) {
+            for (int h = 0; h < minimap_cell_size; ++h) {
+                for (int w = 0; w < minimap_cell_size; ++w) {
+                    int color;
+                    if ((int)((player_x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (x*minimap_cell_size+w)/amount_of_pixels_for_player && 
+                        (int)((player_y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player) {
+                        color = 0xFF0000;
+                    } else if (map[y][x] == 1) {
+                        color = 0x009900;
+                    } else {
+                        color = 0x000000;
+                    }
+                    screen[(minimap_offset_y+y*minimap_cell_size+h)*SCREEN_WIDTH+minimap_offset_x+x*minimap_cell_size+w] = color;
+                }
+            }
         }
     }
 }
@@ -59,30 +108,19 @@ int main() {
 
     int screen[SCREEN_WIDTH * SCREEN_HEIGHT];
 
-    const int map[MAP_SIZE][MAP_SIZE] = {
-        {1,1,1,1,1,1,1,1},
-        {1,0,0,0,0,2,0,1},
-        {1,0,1,0,1,0,0,1},
-        {1,0,1,0,1,0,0,1},
-        {1,0,0,0,0,0,0,1},
-        {1,0,1,0,1,0,0,1},
-        {1,0,0,0,0,0,0,1},
-        {1,1,1,1,1,1,1,1},
-    };
     const int speed = 3;
     const float rotation_speed = 0.05;
 
     const int wall_color = 200;
     const float wall_height_percentage = 0.55;
-    const int tile_size = 96;
     const float rendering_distance_percentage = 1.15; // 1 is 255 pixels (comes from rgb), 2 is 255*2, etc.
     const int enemy_width = 64;
 
     long previous_frame_time = get_current_time_in_ms();
 
     float player_angle = 0;
-    float player_x = tile_size + tile_size / 2;
-    float player_y = tile_size + tile_size / 2;
+    float player_x = TILE_SIZE + TILE_SIZE / 2;
+    float player_y = TILE_SIZE + TILE_SIZE / 2;
 
     create_window(&window, &renderer);
 
@@ -112,8 +150,8 @@ int main() {
 
             while (!hit_wall && wall_distance < 1000) {
                 wall_distance++;
-                int y = (player_y + sin(ray_angle) * wall_distance) / tile_size;
-                int x = (player_x + cos(ray_angle) * wall_distance) / tile_size;
+                int y = (player_y + sin(ray_angle) * wall_distance) / TILE_SIZE;
+                int x = (player_x + cos(ray_angle) * wall_distance) / TILE_SIZE;
 
                 int current_cell = map[y][x];
                 if (current_cell == 1) {
@@ -125,10 +163,10 @@ int main() {
                 }
             }
 
-            int height = wall_height_percentage * (SCREEN_HEIGHT * tile_size / wall_distance);
+            int height = wall_height_percentage * (SCREEN_HEIGHT * TILE_SIZE / wall_distance);
             // the farther the wall the darker it is
             int color = wall_distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - wall_distance / rendering_distance_percentage;
-            render_vertical_line(screen, pixel, height, color, color, color);
+            create_vertical_line(screen, pixel, height, color, color, color);
         }
 
         // moving the player
@@ -136,10 +174,11 @@ int main() {
 
         if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_S]) {
             int direction = keys[SDL_SCANCODE_W] ? 1 : -1;
-            int updated_x = player_x + direction * cos(player_angle) * speed;
-            int updated_y = player_y + direction * sin(player_angle) * speed;
+            printf("%f\t%f\n", sin(player_angle), cos(player_angle));
+            float updated_x = player_x + direction * cos(player_angle) * speed;
+            float updated_y = player_y + direction * sin(player_angle) * speed;
 
-            if (map[updated_y / tile_size][updated_x / tile_size] != 1) {
+            if (map[(int)(updated_y) / TILE_SIZE][(int)(updated_x) / TILE_SIZE] != 1) {
                 player_x = updated_x;
                 player_y = updated_y;
             }
@@ -154,29 +193,9 @@ int main() {
             SCREEN_WIDTH, SCREEN_HEIGHT
         );
 
-        // rendering minimap
-        const int minimap_cell_size = 20;
-        int minimap_offset_x = SCREEN_WIDTH - MAP_SIZE * minimap_cell_size - 16;
-        int minimap_offset_y = SCREEN_HEIGHT - MAP_SIZE * minimap_cell_size - 16;
-        for (int y = 0; y < MAP_SIZE; ++y) {
-            for (int x = 0; x < MAP_SIZE; ++x) {
-                for (int h = 0; h < minimap_cell_size; ++h) {
-                    for (int w = 0; w < minimap_cell_size; ++w) {
-                        int color;
-                        if ((int)((player_x / tile_size) * minimap_cell_size)/3 == (x*minimap_cell_size+w)/3 && 
-                            (int)((player_y / tile_size) * minimap_cell_size)/3 == (y*minimap_cell_size+h)/3) {
-                            color = 0xFF0000;
-                        } else if (map[y][x] == 1) {
-                            color = 0x009900;
-                        } else {
-                            color = 0x000000;
-                        }
-                        screen[(minimap_offset_y+y*minimap_cell_size+h)*SCREEN_WIDTH+minimap_offset_x+x*minimap_cell_size+w] = color;
-                    }
-                }
-            }
-        }
+        create_minimap(player_x, player_y, screen);
 
+        // render the current frame
         SDL_UpdateTexture(texture, NULL, screen, SCREEN_WIDTH * sizeof(int));
         SDL_RenderCopyEx(
             renderer,
