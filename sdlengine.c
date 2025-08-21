@@ -3,8 +3,8 @@
 #include <time.h>
 #include <math.h>
 
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 600
+#define SCREEN_WIDTH 1000
+#define SCREEN_HEIGHT 800
 
 #define MAP_SIZE 20
 #define FOV (M_PI / 3.0)
@@ -32,6 +32,9 @@ const int map[MAP_SIZE][MAP_SIZE] = {
     {1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1},
     {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
 };
+
+struct Enemy {float x; float y; int width; bool hit; float distance;};
+typedef struct Enemy Enemy;
 
 int create_window(SDL_Window **window, SDL_Renderer **renderer) {
     if (SDL_Init(0) != 0) {
@@ -75,7 +78,7 @@ void create_vertical_line(int screen[], int x, int height, int r, int g, int b) 
     }
 }
 
-void create_minimap(float player_x, float player_y, float enemy_x, float enemy_y, int screen[]) {
+void create_minimap(float player_x, float player_y, Enemy enemies[], int num_of_enemies, int screen[]) {
     const int minimap_cell_size = 5;
     const int amount_of_pixels_for_player = 3;
     int minimap_offset_x = SCREEN_WIDTH - MAP_SIZE * minimap_cell_size - 16;
@@ -85,17 +88,27 @@ void create_minimap(float player_x, float player_y, float enemy_x, float enemy_y
             for (int h = 0; h < minimap_cell_size; ++h) {
                 for (int w = 0; w < minimap_cell_size; ++w) {
                     int color;
-                    if ((int)((player_x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (x*minimap_cell_size+w)/amount_of_pixels_for_player && 
-                        (int)((player_y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player) {
-                        color = 0x00FF00;
-                    } else if ((int)((enemy_x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (x*minimap_cell_size+w)/amount_of_pixels_for_player && 
-                        (int)((enemy_y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player) {
-                        color = 0xFF0000;
-                    } else if (map[y][x] == 1) {
+                    // rendeing the walls and space
+                    if (map[y][x] == 1) {
                         color = 0x000099;
                     } else {
                         color = 0x000000;
                     }
+
+                    // rendering the player and enemies
+                    if ((int)((player_x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (x*minimap_cell_size+w)/amount_of_pixels_for_player && 
+                        (int)((player_y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player) {
+                        color = 0x00FF00;
+                    } else {
+                        for (int e = 0; e < num_of_enemies; ++e) {
+                            Enemy *enemy = &enemies[e];
+                            if ((int)((enemy->x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (x*minimap_cell_size+w)/amount_of_pixels_for_player && 
+                                (int)((enemy->y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player) {
+                                color = 0xFF0000;
+                            }
+                        }
+                    }
+
                     screen[(minimap_offset_y+y*minimap_cell_size+h)*SCREEN_WIDTH+minimap_offset_x+x*minimap_cell_size+w] = color;
                 }
             }
@@ -124,9 +137,11 @@ int main() {
     float player_x = TILE_SIZE + TILE_SIZE / 2;
     float player_y = TILE_SIZE + TILE_SIZE / 2;
 
-    float enemy_x = 5 * TILE_SIZE;
-    float enemy_y = 1.5 * TILE_SIZE;
-    int enemy_width = 20;
+    const int num_of_enemies = 2;
+    Enemy enemies[num_of_enemies] = {
+        {5 * TILE_SIZE, 1.5 * TILE_SIZE, 20, false, 0},
+        {3 * TILE_SIZE, 1.5 * TILE_SIZE, 10, false, 0}
+    };
 
     create_window(&window, &renderer);
 
@@ -155,10 +170,13 @@ int main() {
         // rendering
         for (int pixel = 0; pixel < SCREEN_WIDTH; ++pixel) {
             bool hit_wall = false;
-            bool hit_enemy = false;
-            float enemy_distance = 0;
             int wall_distance = 0;
             float ray_angle = (player_angle - FOV/2.0) + ((float)pixel / SCREEN_WIDTH) * FOV;
+
+            for (int e = 0; e < num_of_enemies; ++e) {
+                enemies[e].hit = false;
+                enemies[e].distance = 0;
+            }
 
             while (!hit_wall && wall_distance < 1000) {
                 wall_distance++;
@@ -174,12 +192,15 @@ int main() {
                     hit_wall = true;
                 }
 
-                if (x > enemy_x - enemy_width / 2 && x < enemy_x + enemy_width / 2 &&
-                    y > enemy_y - enemy_width / 2 && y < enemy_y + enemy_width / 2 && 
-                    !hit_enemy
-                ) {
-                    hit_enemy = true;
-                    enemy_distance = wall_distance;
+                for (int e = 0; e < num_of_enemies; ++e) {
+                    Enemy *enemy = &enemies[e];
+                    if (x > enemy->x - enemy->width / 2 && x < enemy->x + enemy->width / 2 &&
+                        y > enemy->y - enemy->width / 2 && y < enemy->y + enemy->width / 2 &&
+                        !enemy->hit
+                    ) {
+                        enemy->hit = true;
+                        enemy->distance = wall_distance;
+                    }
                 }
             }
 
@@ -188,8 +209,11 @@ int main() {
             int color = wall_distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - wall_distance / rendering_distance_percentage;
             create_vertical_line(screen, pixel, height, color, color, color);
             
-            if (hit_enemy) {
-                create_vertical_line(screen, pixel, 250*TILE_SIZE / enemy_distance, color, 0, 0);
+            for (int e = 0; e < num_of_enemies; ++e) {
+                Enemy *enemy = &enemies[e];
+                if (enemy->hit && enemy->distance) {
+                    create_vertical_line(screen, pixel, 250*TILE_SIZE / enemy->distance, 255, 0, 0);
+                }
             }
         }
 
@@ -209,7 +233,7 @@ int main() {
         if (keys[SDL_SCANCODE_A]) player_angle -= rotation_speed * delta_time;
         if (keys[SDL_SCANCODE_D]) player_angle += rotation_speed * delta_time;
 
-        create_minimap(player_x, player_y, enemy_x, enemy_y, screen);
+        create_minimap(player_x, player_y, enemies, num_of_enemies, screen);
 
         // render the current frame
         SDL_UpdateTexture(texture, NULL, screen, SCREEN_WIDTH * sizeof(int));
