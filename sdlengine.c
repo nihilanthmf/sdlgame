@@ -124,11 +124,18 @@ int main() {
     float player_x = TILE_SIZE + TILE_SIZE / 2;
     float player_y = TILE_SIZE + TILE_SIZE / 2;
 
-    float enemy_x = TILE_SIZE + TILE_SIZE / 2;
-    float enemy_y = TILE_SIZE + TILE_SIZE / 2;
+    float enemy_x = 5 * TILE_SIZE;
+    float enemy_y = 1.5 * TILE_SIZE;
     int enemy_width = 20;
 
     create_window(&window, &renderer);
+
+    SDL_Texture *texture = SDL_CreateTexture(
+        renderer,
+        SDL_PIXELFORMAT_ARGB8888,
+        SDL_TEXTUREACCESS_STREAMING,
+        SCREEN_WIDTH, SCREEN_HEIGHT
+    );
 
     while (running) {
         // calculating the delta time (time in ms between frames) to make the movement not be framerate dependent
@@ -146,7 +153,6 @@ int main() {
         memset(screen, 0xFF000000, sizeof(screen));
 
         // rendering
-        bool enemy_rendered = false;
         for (int pixel = 0; pixel < SCREEN_WIDTH; ++pixel) {
             bool hit_wall = false;
             bool hit_enemy = false;
@@ -158,6 +164,10 @@ int main() {
                 wall_distance++;
                 int y = player_y + sin(ray_angle) * wall_distance;
                 int x = player_x + cos(ray_angle) * wall_distance;
+                
+                if (x / TILE_SIZE > MAP_SIZE || y / TILE_SIZE > MAP_SIZE) {
+                    break;
+                }
 
                 int current_cell = map[y / TILE_SIZE][x / TILE_SIZE];
                 if (current_cell == 1) {
@@ -198,13 +208,6 @@ int main() {
         }
         if (keys[SDL_SCANCODE_A]) player_angle -= rotation_speed * delta_time;
         if (keys[SDL_SCANCODE_D]) player_angle += rotation_speed * delta_time;
-
-        SDL_Texture *texture = SDL_CreateTexture(
-            renderer,
-            SDL_PIXELFORMAT_ARGB8888,
-            SDL_TEXTUREACCESS_STREAMING,
-            SCREEN_WIDTH, SCREEN_HEIGHT
-        );
 
         create_minimap(player_x, player_y, enemy_x, enemy_y, screen);
 
