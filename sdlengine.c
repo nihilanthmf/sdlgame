@@ -8,7 +8,7 @@
 
 #define MAP_SIZE 20
 #define FOV (M_PI / 3.0)
-#define TILE_SIZE 48
+#define TILE_SIZE 24
 
 const int map[MAP_SIZE][MAP_SIZE] = {
     {2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2},
@@ -118,7 +118,7 @@ void create_minimap(float player_x, float player_y, Enemy enemies[], int num_of_
     }
 }
 
-void draw_weapon(int screen[], int tilt_x, bool shot) {
+void draw_weapon(int screen[], int tilt_x, int tilt_y, bool shot, int gun_offset_y) {
     SDL_Surface *gun_sprite = SDL_LoadBMP(shot ? "./art/gun_shot.bmp" : "./art/gun.bmp");
     int *pixels = (int*)gun_sprite->pixels;
     int w = gun_sprite->w;
@@ -129,7 +129,7 @@ void draw_weapon(int screen[], int tilt_x, bool shot) {
             int screen_x = (SCREEN_WIDTH/2)-(w/2) + x + tilt_x;
             int pixel = pixels[(h-y-1)*h+x];
             if (pixel) {
-                screen[y*SCREEN_WIDTH + screen_x] = pixel;
+                screen[(y+tilt_y-gun_offset_y)*SCREEN_WIDTH + screen_x] = pixel;
             }
         }
     }
@@ -143,13 +143,16 @@ int main() {
 
     int screen[SCREEN_WIDTH * SCREEN_HEIGHT];
 
-    const float speed = 0.15;
+    const float speed = 0.1;
     const float rotation_speed = 0.0035;
-    const float rendering_step = 2;
+    const float rendering_step = 1;
 
     const int wall_color = 200;
     const float wall_height_percentage = 0.55;
     const float rendering_distance_percentage = 2; // 1 is 255 pixels (comes from rgb), 2 is 255*2, etc.
+
+    const int max_gun_tilt_y = 15;
+    const int max_gun_tilt_x = 25;
 
     long previous_frame_time = get_current_time_in_ms();
 
@@ -157,7 +160,10 @@ int main() {
     float player_x = TILE_SIZE + TILE_SIZE / 2;
     float player_y = TILE_SIZE + TILE_SIZE / 2;
 
-    long last_shot_time = 0;
+    long last_shot_timestep = 0;
+    long gun_animation_last_timestep = 0;
+
+    int gun_tilt_y = 0;
 
     const int num_of_enemies = 1;
     Enemy enemies[num_of_enemies] = {
@@ -194,9 +200,10 @@ int main() {
         // handling other input
         const Uint8 *keys = SDL_GetKeyboardState(NULL);
         int rotation_direction = 0;
+        int direction = 0;
         if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_S]) {
             // moving the player forward & backward
-            int direction = keys[SDL_SCANCODE_W] ? 1 : -1;
+            direction = keys[SDL_SCANCODE_W] ? 1 : -1;
             float updated_x = player_x + direction * cos(player_angle) * speed * delta_time;
             float updated_y = player_y + direction * sin(player_angle) * speed * delta_time;
 
@@ -211,9 +218,9 @@ int main() {
         if (keys[SDL_SCANCODE_D]) rotation_direction = 1;
         player_angle += rotation_direction * rotation_speed * delta_time;
 
-        if (keys[SDL_SCANCODE_SPACE] && current_frame_time - last_shot_time > 200) {
+        if (keys[SDL_SCANCODE_SPACE] && current_frame_time - last_shot_timestep > 200) {
             shot = true;
-            last_shot_time = current_frame_time;
+            last_shot_timestep = current_frame_time;
         } else {
             shot = false;
         }
@@ -287,7 +294,12 @@ int main() {
             }
         }
 
-        draw_weapon(screen, rotation_direction * -25, shot);
+        // shaking the gun a little bit while walking
+        if (current_frame_time - gun_animation_last_timestep > 200) {
+            gun_tilt_y = abs(direction) * (gun_tilt_y == max_gun_tilt_y ? 0 : max_gun_tilt_y);
+            gun_animation_last_timestep = current_frame_time;
+        }
+        draw_weapon(screen, rotation_direction * -max_gun_tilt_x, gun_tilt_y, shot, max_gun_tilt_y);
 
         create_minimap(player_x, player_y, enemies, num_of_enemies, screen);
 
@@ -305,8 +317,6 @@ int main() {
 
         SDL_RenderPresent(renderer);
 
-        if (fps > 60) {
-            SDL_Delay(10);
-        }
+        SDL_Delay(10);
     }
 }
