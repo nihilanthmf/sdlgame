@@ -11,7 +11,7 @@
 #define TILE_SIZE 48
 
 const int map[MAP_SIZE][MAP_SIZE] = {
-    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2},
     {1,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1},
     {1,0,1,1,1,0,0,1,0,1,1,1,0,1,0,0,1,1,0,1},
     {1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1,0,1},
@@ -28,12 +28,12 @@ const int map[MAP_SIZE][MAP_SIZE] = {
     {1,1,1,1,0,1,1,1,1,0,1,1,1,1,0,1,1,1,1,1},
     {1,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1},
     {1,0,1,1,0,1,0,1,1,1,1,1,0,1,0,1,1,0,1,1},
-    {1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1},
-    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
+    {1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,1},
+    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}, 
+    {2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2}
 };
 
-struct Enemy {float x; float y; int width; bool hit; float distance;};
+struct Enemy {float x; float y; int width; bool hit_per_ray; bool shot_per_frame; float distance; int health;};
 typedef struct Enemy Enemy;
 
 int create_window(SDL_Window **window, SDL_Renderer **renderer) {
@@ -67,9 +67,10 @@ long get_current_time_in_ms() {
     return ms;
 }
 
-void create_vertical_line(int screen[], int x, int height, int r, int g, int b) {
-    for (int h = 2 * height; h > 0; --h) {
-        int screen_pixel_index = (SCREEN_HEIGHT / 2 - height + h) * SCREEN_WIDTH + x;
+void create_vertical_line(int screen[], int x, int bottom_height, int top_height, int r, int g, int b) {
+    for (int h = bottom_height + top_height; h > 0; --h) {
+        // int screen_pixel_index = (SCREEN_HEIGHT / 2 - height + h) * SCREEN_WIDTH + x;
+        int screen_pixel_index = (SCREEN_HEIGHT / 2 - bottom_height + h) * SCREEN_WIDTH + x;
         if (screen_pixel_index >= 0 && screen_pixel_index < SCREEN_WIDTH * SCREEN_HEIGHT) {
             // converting from rgb to hex color representation
             int color = r * (0xFF / 255) * 16*16*16*16 + g * (0xFF / 255) * 16*16 + b * (0xFF / 255);
@@ -89,7 +90,7 @@ void create_minimap(float player_x, float player_y, Enemy enemies[], int num_of_
                 for (int w = 0; w < minimap_cell_size; ++w) {
                     int color;
                     // rendeing the walls and space
-                    if (map[y][x] == 1) {
+                    if (map[y][x]) {
                         color = 0x000099;
                     } else {
                         color = 0x000000;
@@ -103,7 +104,8 @@ void create_minimap(float player_x, float player_y, Enemy enemies[], int num_of_
                         for (int e = 0; e < num_of_enemies; ++e) {
                             Enemy *enemy = &enemies[e];
                             if ((int)((enemy->x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (x*minimap_cell_size+w)/amount_of_pixels_for_player && 
-                                (int)((enemy->y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player) {
+                                (int)((enemy->y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player &&
+                                enemy->health) {
                                 color = 0xFF0000;
                             }
                         }
@@ -111,6 +113,23 @@ void create_minimap(float player_x, float player_y, Enemy enemies[], int num_of_
 
                     screen[(minimap_offset_y+y*minimap_cell_size+h)*SCREEN_WIDTH+minimap_offset_x+x*minimap_cell_size+w] = color;
                 }
+            }
+        }
+    }
+}
+
+void draw_weapon(int screen[], int tilt_x, bool shot) {
+    SDL_Surface *gun_sprite = SDL_LoadBMP(shot ? "./art/gun_shot.bmp" : "./art/gun.bmp");
+    int *pixels = (int*)gun_sprite->pixels;
+    int w = gun_sprite->w;
+    int h = gun_sprite->h;
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int screen_x = (SCREEN_WIDTH/2)-(w/2) + x + tilt_x;
+            int pixel = pixels[(h-y-1)*h+x];
+            if (pixel) {
+                screen[y*SCREEN_WIDTH + screen_x] = pixel;
             }
         }
     }
@@ -126,10 +145,11 @@ int main() {
 
     const float speed = 0.15;
     const float rotation_speed = 0.0035;
+    const float rendering_step = 2;
 
     const int wall_color = 200;
     const float wall_height_percentage = 0.55;
-    const float rendering_distance_percentage = 1.15; // 1 is 255 pixels (comes from rgb), 2 is 255*2, etc.
+    const float rendering_distance_percentage = 2; // 1 is 255 pixels (comes from rgb), 2 is 255*2, etc.
 
     long previous_frame_time = get_current_time_in_ms();
 
@@ -137,10 +157,11 @@ int main() {
     float player_x = TILE_SIZE + TILE_SIZE / 2;
     float player_y = TILE_SIZE + TILE_SIZE / 2;
 
-    const int num_of_enemies = 2;
+    long last_shot_time = 0;
+
+    const int num_of_enemies = 1;
     Enemy enemies[num_of_enemies] = {
-        {5 * TILE_SIZE, 1.5 * TILE_SIZE, 20, false, 0},
-        {3 * TILE_SIZE, 1.5 * TILE_SIZE, 10, false, 0}
+        {10 * TILE_SIZE, 1.5 * TILE_SIZE, 10, false, false, 0, 10}
     };
 
     create_window(&window, &renderer);
@@ -157,29 +178,69 @@ int main() {
         long current_frame_time = get_current_time_in_ms();
         int delta_time = current_frame_time - previous_frame_time;
         previous_frame_time = current_frame_time;
+        int fps = 1000 / delta_time;
+        // printf("FPS %d\n", fps);
+        
+        bool shot = false;
 
-        // quit the app if user closes the window
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT)
+        // quit the app is user closes the window
+        SDL_Event e;
+        if (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
                 running = false;
+            }
         }
 
-        // cleaning the screen
-        memset(screen, 0xFF000000, sizeof(screen));
+        // handling other input
+        const Uint8 *keys = SDL_GetKeyboardState(NULL);
+        int rotation_direction = 0;
+        if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_S]) {
+            // moving the player forward & backward
+            int direction = keys[SDL_SCANCODE_W] ? 1 : -1;
+            float updated_x = player_x + direction * cos(player_angle) * speed * delta_time;
+            float updated_y = player_y + direction * sin(player_angle) * speed * delta_time;
+
+            // checking wall collision
+            if (!map[(int)(updated_y) / TILE_SIZE][(int)(updated_x) / TILE_SIZE]) {
+                player_x = updated_x;
+                player_y = updated_y;
+            }
+        }
+        // rotating the player
+        if (keys[SDL_SCANCODE_A]) rotation_direction = -1;
+        if (keys[SDL_SCANCODE_D]) rotation_direction = 1;
+        player_angle += rotation_direction * rotation_speed * delta_time;
+
+        if (keys[SDL_SCANCODE_SPACE] && current_frame_time - last_shot_time > 200) {
+            shot = true;
+            last_shot_time = current_frame_time;
+        } else {
+            shot = false;
+        }
+
+        // cleaning the screen & drawing the sky and the floor
+        int screen_pixels = SCREEN_HEIGHT * SCREEN_WIDTH;
+        for (int x = 0; x < screen_pixels; x++) {
+            screen[x] = x < screen_pixels / 2 ? 0xFF000000 : 0x003399;
+        }
 
         // rendering
+        for (int e = 0; e < num_of_enemies; ++e) {
+            enemies[e].shot_per_frame = false;
+        }
         for (int pixel = 0; pixel < SCREEN_WIDTH; ++pixel) {
             bool hit_wall = false;
             int wall_distance = 0;
             float ray_angle = (player_angle - FOV/2.0) + ((float)pixel / SCREEN_WIDTH) * FOV;
+            int wall_number;
 
             for (int e = 0; e < num_of_enemies; ++e) {
-                enemies[e].hit = false;
+                enemies[e].hit_per_ray = false;
                 enemies[e].distance = 0;
             }
 
             while (!hit_wall && wall_distance < 1000) {
-                wall_distance++;
+                wall_distance += rendering_step;
                 int y = player_y + sin(ray_angle) * wall_distance;
                 int x = player_x + cos(ray_angle) * wall_distance;
                 
@@ -188,18 +249,26 @@ int main() {
                 }
 
                 int current_cell = map[y / TILE_SIZE][x / TILE_SIZE];
-                if (current_cell == 1) {
+                if (current_cell) {
                     hit_wall = true;
+                    wall_number = current_cell;
                 }
 
                 for (int e = 0; e < num_of_enemies; ++e) {
                     Enemy *enemy = &enemies[e];
                     if (x > enemy->x - enemy->width / 2 && x < enemy->x + enemy->width / 2 &&
                         y > enemy->y - enemy->width / 2 && y < enemy->y + enemy->width / 2 &&
-                        !enemy->hit
+                        !enemy->hit_per_ray &&
+                        enemy->health
                     ) {
-                        enemy->hit = true;
+                        enemy->hit_per_ray = true;
                         enemy->distance = wall_distance;
+
+                        // checking the shot
+                        if (shot && fabsf(player_angle - ray_angle) < .1 && !(enemy->shot_per_frame)) {
+                            (enemy->health)--;
+                            enemy->shot_per_frame = true;
+                        }
                     }
                 }
             }
@@ -207,31 +276,18 @@ int main() {
             int height = wall_height_percentage * (SCREEN_HEIGHT * TILE_SIZE / wall_distance);
             // the farther the wall the darker it is
             int color = wall_distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - wall_distance / rendering_distance_percentage;
-            create_vertical_line(screen, pixel, height, color, color, color);
+            create_vertical_line(screen, pixel, height, wall_number * height, color, color, color);
             
             for (int e = 0; e < num_of_enemies; ++e) {
                 Enemy *enemy = &enemies[e];
-                if (enemy->hit && enemy->distance) {
-                    create_vertical_line(screen, pixel, 250*TILE_SIZE / enemy->distance, 255, 0, 0);
+                if (enemy->hit_per_ray && enemy->distance) {
+                    int enemy_color = enemy->distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - enemy->distance / rendering_distance_percentage;
+                    create_vertical_line(screen, pixel, 250*TILE_SIZE / enemy->distance, 250*TILE_SIZE / enemy->distance, enemy_color * (enemy->health/10.0f), 0, 0);
                 }
             }
         }
 
-        // moving the player
-        const Uint8 *keys = SDL_GetKeyboardState(NULL);
-
-        if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_S]) {
-            int direction = keys[SDL_SCANCODE_W] ? 1 : -1;
-            float updated_x = player_x + direction * cos(player_angle) * speed * delta_time;
-            float updated_y = player_y + direction * sin(player_angle) * speed * delta_time;
-
-            if (map[(int)(updated_y) / TILE_SIZE][(int)(updated_x) / TILE_SIZE] != 1) {
-                player_x = updated_x;
-                player_y = updated_y;
-            }
-        }
-        if (keys[SDL_SCANCODE_A]) player_angle -= rotation_speed * delta_time;
-        if (keys[SDL_SCANCODE_D]) player_angle += rotation_speed * delta_time;
+        draw_weapon(screen, rotation_direction * -25, shot);
 
         create_minimap(player_x, player_y, enemies, num_of_enemies, screen);
 
@@ -248,6 +304,9 @@ int main() {
         );
 
         SDL_RenderPresent(renderer);
-        // SDL_Delay(16); // ~60 FPS
+
+        if (fps > 60) {
+            SDL_Delay(10);
+        }
     }
 }
