@@ -135,6 +135,54 @@ void draw_weapon(int screen[], int tilt_x, int tilt_y, bool shot, int gun_offset
     }
 }
 
+void handle_player_movement(const Uint8 *keys, float *player_x, float *player_y, float *player_angle, const float speed, const float rotation_speed, int *rotation_direction, int *direction) {
+    if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_S]) {
+        // moving the player forward & backward
+        *direction = keys[SDL_SCANCODE_W] ? 1 : -1;
+        float updated_x = *player_x + *direction * cos(*player_angle) * speed;
+        float updated_y = *player_y + *direction * sin(*player_angle) * speed;
+
+        // checking wall collision
+        if (!map[(int)(updated_y) / TILE_SIZE][(int)(updated_x) / TILE_SIZE]) {
+            *player_x = updated_x;
+            *player_y = updated_y;
+        }
+    }
+    // rotating the player
+    if (keys[SDL_SCANCODE_A]) *rotation_direction = -1;
+    if (keys[SDL_SCANCODE_D]) *rotation_direction = 1;
+    *player_angle += *rotation_direction * rotation_speed;
+}
+
+void handle_shooting(const Uint8 *keys, long current_frame_time, long *last_shot_timestep, int gun_firing_delta_ms, bool *shot) {
+    if (keys[SDL_SCANCODE_SPACE] && current_frame_time - *last_shot_timestep > gun_firing_delta_ms) {
+        *shot = true;
+        *last_shot_timestep = current_frame_time;
+    } else {
+        *shot = false;
+    }
+}
+
+void detect_enemies(int x, int y, int num_of_enemies, Enemy enemies[], int wall_distance, bool shot, float shooting_angle) {
+    for (int e = 0; e < num_of_enemies; ++e) {
+        Enemy *enemy = &enemies[e];
+        if (x > enemy->x - enemy->width / 2 && x < enemy->x + enemy->width / 2 &&
+            y > enemy->y - enemy->width / 2 && y < enemy->y + enemy->width / 2 &&
+            !enemy->hit_per_ray &&
+            enemy->health
+        ) {
+            enemy->hit_per_ray = true;
+            enemy->distance = wall_distance;
+
+            // checking the shot
+            if (shot && shooting_angle < .1 && !(enemy->shot_per_frame)) {
+                (enemy->health)--;
+                enemy->shot_per_frame = true;
+            }
+        }
+    }
+}
+
 int main() {
     SDL_Window *window;
     SDL_Renderer *renderer;
@@ -153,6 +201,8 @@ int main() {
 
     const int max_gun_tilt_y = 15;
     const int max_gun_tilt_x = 25;
+    const int gun_shaking_time_ms = 200;
+    const int gun_firing_delta_ms = 200;
 
     long previous_frame_time = get_current_time_in_ms();
 
@@ -188,6 +238,9 @@ int main() {
         // printf("FPS %d\n", fps);
         
         bool shot = false;
+        
+        int rotation_direction = 0;
+        int direction = 0;
 
         // quit the app is user closes the window
         SDL_Event e;
@@ -197,33 +250,9 @@ int main() {
             }
         }
 
-        // handling other input
         const Uint8 *keys = SDL_GetKeyboardState(NULL);
-        int rotation_direction = 0;
-        int direction = 0;
-        if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_S]) {
-            // moving the player forward & backward
-            direction = keys[SDL_SCANCODE_W] ? 1 : -1;
-            float updated_x = player_x + direction * cos(player_angle) * speed * delta_time;
-            float updated_y = player_y + direction * sin(player_angle) * speed * delta_time;
-
-            // checking wall collision
-            if (!map[(int)(updated_y) / TILE_SIZE][(int)(updated_x) / TILE_SIZE]) {
-                player_x = updated_x;
-                player_y = updated_y;
-            }
-        }
-        // rotating the player
-        if (keys[SDL_SCANCODE_A]) rotation_direction = -1;
-        if (keys[SDL_SCANCODE_D]) rotation_direction = 1;
-        player_angle += rotation_direction * rotation_speed * delta_time;
-
-        if (keys[SDL_SCANCODE_SPACE] && current_frame_time - last_shot_timestep > 200) {
-            shot = true;
-            last_shot_timestep = current_frame_time;
-        } else {
-            shot = false;
-        }
+        handle_player_movement(keys, &player_x, &player_y, &player_angle, speed * delta_time, rotation_speed * delta_time, &rotation_direction, &direction);
+        handle_shooting(keys, current_frame_time, &last_shot_timestep, gun_firing_delta_ms, &shot);
 
         // cleaning the screen & drawing the sky and the floor
         int screen_pixels = SCREEN_HEIGHT * SCREEN_WIDTH;
@@ -261,23 +290,7 @@ int main() {
                     wall_number = current_cell;
                 }
 
-                for (int e = 0; e < num_of_enemies; ++e) {
-                    Enemy *enemy = &enemies[e];
-                    if (x > enemy->x - enemy->width / 2 && x < enemy->x + enemy->width / 2 &&
-                        y > enemy->y - enemy->width / 2 && y < enemy->y + enemy->width / 2 &&
-                        !enemy->hit_per_ray &&
-                        enemy->health
-                    ) {
-                        enemy->hit_per_ray = true;
-                        enemy->distance = wall_distance;
-
-                        // checking the shot
-                        if (shot && fabsf(player_angle - ray_angle) < .1 && !(enemy->shot_per_frame)) {
-                            (enemy->health)--;
-                            enemy->shot_per_frame = true;
-                        }
-                    }
-                }
+                detect_enemies(x, y, num_of_enemies, enemies, wall_distance, shot, fabsf(player_angle - ray_angle));
             }
 
             int height = wall_height_percentage * (SCREEN_HEIGHT * TILE_SIZE / wall_distance);
@@ -295,7 +308,7 @@ int main() {
         }
 
         // shaking the gun a little bit while walking
-        if (current_frame_time - gun_animation_last_timestep > 200) {
+        if (current_frame_time - gun_animation_last_timestep > gun_shaking_time_ms) {
             gun_tilt_y = abs(direction) * (gun_tilt_y == max_gun_tilt_y ? 0 : max_gun_tilt_y);
             gun_animation_last_timestep = current_frame_time;
         }
