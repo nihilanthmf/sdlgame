@@ -9,6 +9,7 @@
 #define MAP_SIZE 20
 #define FOV (M_PI / 3.0)
 #define TILE_SIZE 24
+#define FULL_CIRCLE_IN_RADIAN 6.28319
 
 const int map[MAP_SIZE][MAP_SIZE] = {
     {2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2},
@@ -35,6 +36,10 @@ const int map[MAP_SIZE][MAP_SIZE] = {
 
 struct Enemy {float x; float y; int width; bool hit_per_ray; bool shot_per_frame; float distance; int health;};
 typedef struct Enemy Enemy;
+
+int sign(int x) {
+    return x >= 0 ? 1 : -1;
+}
 
 int create_window(SDL_Window **window, SDL_Renderer **renderer) {
     if (SDL_Init(0) != 0) {
@@ -67,7 +72,7 @@ long get_current_time_in_ms() {
     return ms;
 }
 
-void create_vertical_line(int screen[], int x, int bottom_height, int top_height, int r, int g, int b) {
+void draw_vertical_line(int screen[], int x, int bottom_height, int top_height, int r, int g, int b) {
     for (int h = bottom_height + top_height; h > 0; --h) {
         // int screen_pixel_index = (SCREEN_HEIGHT / 2 - height + h) * SCREEN_WIDTH + x;
         int screen_pixel_index = (SCREEN_HEIGHT / 2 - bottom_height + h) * SCREEN_WIDTH + x;
@@ -79,9 +84,9 @@ void create_vertical_line(int screen[], int x, int bottom_height, int top_height
     }
 }
 
-void create_minimap(float player_x, float player_y, Enemy enemies[], int num_of_enemies, int screen[]) {
+void create_minimap(float player_x, float player_y, Enemy enemies[], int enemies_length, int screen[], float player_angle) {
     const int minimap_cell_size = 5;
-    const int amount_of_pixels_for_player = 3;
+    const int amount_of_pixels_for_player = 2;
     int minimap_offset_x = SCREEN_WIDTH - MAP_SIZE * minimap_cell_size - 16;
     int minimap_offset_y = SCREEN_HEIGHT - MAP_SIZE * minimap_cell_size - 16;
     for (int y = 0; y < MAP_SIZE; ++y) {
@@ -96,15 +101,21 @@ void create_minimap(float player_x, float player_y, Enemy enemies[], int num_of_
                         color = 0x000000;
                     }
 
+                    int approx_player_x = (int)((player_x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player;
+                    int approx_player_y = (int)((player_y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player;
+
+                    int approx_cell_x = (x*minimap_cell_size+w)/amount_of_pixels_for_player;
+                    int approx_cell_y = (y*minimap_cell_size+h)/amount_of_pixels_for_player;
+
                     // rendering the player and enemies
-                    if ((int)((player_x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (x*minimap_cell_size+w)/amount_of_pixels_for_player && 
-                        (int)((player_y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player) {
+                    if (approx_player_x == approx_cell_x && 
+                        approx_player_y == approx_cell_y) {
                         color = 0x00FF00;
                     } else {
-                        for (int e = 0; e < num_of_enemies; ++e) {
+                        for (int e = 0; e < enemies_length; ++e) {
                             Enemy *enemy = &enemies[e];
-                            if ((int)((enemy->x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (x*minimap_cell_size+w)/amount_of_pixels_for_player && 
-                                (int)((enemy->y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == (y*minimap_cell_size+h)/amount_of_pixels_for_player &&
+                            if ((int)((enemy->x / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == approx_cell_x && 
+                                (int)((enemy->y / TILE_SIZE) * minimap_cell_size)/amount_of_pixels_for_player == approx_cell_y &&
                                 enemy->health) {
                                 color = 0xFF0000;
                             }
@@ -118,18 +129,18 @@ void create_minimap(float player_x, float player_y, Enemy enemies[], int num_of_
     }
 }
 
-void draw_weapon(int screen[], int tilt_x, int tilt_y, bool shot, int gun_offset_y) {
-    SDL_Surface *gun_sprite = SDL_LoadBMP(shot ? "./art/gun_shot.bmp" : "./art/gun.bmp");
-    int *pixels = (int*)gun_sprite->pixels;
-    int w = gun_sprite->w;
-    int h = gun_sprite->h;
+void draw_sprite(int screen[], char path_to_sprite[], int pos_x, int pos_y) {
+    SDL_Surface *sprite = SDL_LoadBMP(path_to_sprite);
+    int *pixels = (int*)sprite->pixels;
+    int w = sprite->w;
+    int h = sprite->h;
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            int screen_x = (SCREEN_WIDTH/2)-(w/2) + x + tilt_x;
+            int screen_x = pos_x - (w/2) + x;
             int pixel = pixels[(h-y-1)*h+x];
             if (pixel) {
-                screen[(y+tilt_y-gun_offset_y)*SCREEN_WIDTH + screen_x] = pixel;
+                screen[(pos_y + y)*SCREEN_WIDTH + screen_x] = pixel;
             }
         }
     }
@@ -151,7 +162,21 @@ void handle_player_movement(const Uint8 *keys, float *player_x, float *player_y,
     // rotating the player
     if (keys[SDL_SCANCODE_A]) *rotation_direction = -1;
     if (keys[SDL_SCANCODE_D]) *rotation_direction = 1;
-    *player_angle += *rotation_direction * rotation_speed;
+
+    // clamp the player angle to 360 degrees
+    float temp_player_angle = *player_angle + *rotation_direction * rotation_speed;
+    *player_angle = fabsf(temp_player_angle) > FULL_CIRCLE_IN_RADIAN ? 0 : temp_player_angle;
+}
+
+int handle_enemy_collision(Enemy *enemies, int enemies_length, float player_x, float player_y) {
+    for (int i = 0; i < enemies_length; ++i) {
+        Enemy current_enemy = enemies[i];
+        if ((player_x > current_enemy.x - current_enemy.width / 2 && player_x < current_enemy.x + current_enemy.width / 2) && 
+            (player_y > current_enemy.y - current_enemy.width / 2 && player_y < current_enemy.y + current_enemy.width / 2)) {
+                return 1;
+            }
+    }
+    return 0;
 }
 
 void handle_shooting(const Uint8 *keys, long current_frame_time, long *last_shot_timestep, int gun_firing_delta_ms, bool *shot) {
@@ -163,8 +188,8 @@ void handle_shooting(const Uint8 *keys, long current_frame_time, long *last_shot
     }
 }
 
-void detect_enemies(int x, int y, int num_of_enemies, Enemy enemies[], int wall_distance, bool shot, float shooting_angle) {
-    for (int e = 0; e < num_of_enemies; ++e) {
+void detect_enemies(int x, int y, int enemies_length, Enemy enemies[], int wall_distance, bool shot, float shooting_angle) {
+    for (int e = 0; e < enemies_length; ++e) {
         Enemy *enemy = &enemies[e];
         if (x > enemy->x - enemy->width / 2 && x < enemy->x + enemy->width / 2 &&
             y > enemy->y - enemy->width / 2 && y < enemy->y + enemy->width / 2 &&
@@ -209,14 +234,15 @@ int main() {
     float player_angle = 0;
     float player_x = TILE_SIZE + TILE_SIZE / 2;
     float player_y = TILE_SIZE + TILE_SIZE / 2;
+    int health = 10;
 
     long last_shot_timestep = 0;
     long gun_animation_last_timestep = 0;
 
     int gun_tilt_y = 0;
 
-    const int num_of_enemies = 1;
-    Enemy enemies[num_of_enemies] = {
+    const int enemies_length = 1;
+    Enemy enemies[enemies_length] = {
         {10 * TILE_SIZE, 1.5 * TILE_SIZE, 10, false, false, 0, 10}
     };
 
@@ -252,6 +278,7 @@ int main() {
 
         const Uint8 *keys = SDL_GetKeyboardState(NULL);
         handle_player_movement(keys, &player_x, &player_y, &player_angle, speed * delta_time, rotation_speed * delta_time, &rotation_direction, &direction);
+        health -= handle_enemy_collision(enemies, enemies_length, player_x, player_y);
         handle_shooting(keys, current_frame_time, &last_shot_timestep, gun_firing_delta_ms, &shot);
 
         // cleaning the screen & drawing the sky and the floor
@@ -261,7 +288,7 @@ int main() {
         }
 
         // rendering
-        for (int e = 0; e < num_of_enemies; ++e) {
+        for (int e = 0; e < enemies_length; ++e) {
             enemies[e].shot_per_frame = false;
         }
         for (int pixel = 0; pixel < SCREEN_WIDTH; ++pixel) {
@@ -270,7 +297,7 @@ int main() {
             float ray_angle = (player_angle - FOV/2.0) + ((float)pixel / SCREEN_WIDTH) * FOV;
             int wall_number;
 
-            for (int e = 0; e < num_of_enemies; ++e) {
+            for (int e = 0; e < enemies_length; ++e) {
                 enemies[e].hit_per_ray = false;
                 enemies[e].distance = 0;
             }
@@ -290,19 +317,19 @@ int main() {
                     wall_number = current_cell;
                 }
 
-                detect_enemies(x, y, num_of_enemies, enemies, wall_distance, shot, fabsf(player_angle - ray_angle));
+                detect_enemies(x, y, enemies_length, enemies, wall_distance, shot, fabsf(player_angle - ray_angle));
             }
 
-            int height = wall_height_percentage * (SCREEN_HEIGHT * TILE_SIZE / wall_distance);
+            int height = wall_height_percentage * (SCREEN_HEIGHT * TILE_SIZE / wall_distance) + abs(SCREEN_WIDTH / 2 - pixel) * 0.03;
             // the farther the wall the darker it is
             int color = wall_distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - wall_distance / rendering_distance_percentage;
-            create_vertical_line(screen, pixel, height, wall_number * height, color, color, color);
+            draw_vertical_line(screen, pixel, height, wall_number * height, color, color, color);
             
-            for (int e = 0; e < num_of_enemies; ++e) {
+            for (int e = 0; e < enemies_length; ++e) {
                 Enemy *enemy = &enemies[e];
                 if (enemy->hit_per_ray && enemy->distance) {
                     int enemy_color = enemy->distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - enemy->distance / rendering_distance_percentage;
-                    create_vertical_line(screen, pixel, 250*TILE_SIZE / enemy->distance, 250*TILE_SIZE / enemy->distance, enemy_color * (enemy->health/10.0f), 0, 0);
+                    draw_vertical_line(screen, pixel, 250*TILE_SIZE / enemy->distance, 250*TILE_SIZE / enemy->distance, enemy_color * (enemy->health/10.0f), 0, 0);
                 }
             }
         }
@@ -312,9 +339,16 @@ int main() {
             gun_tilt_y = abs(direction) * (gun_tilt_y == max_gun_tilt_y ? 0 : max_gun_tilt_y);
             gun_animation_last_timestep = current_frame_time;
         }
-        draw_weapon(screen, rotation_direction * -max_gun_tilt_x, gun_tilt_y, shot, max_gun_tilt_y);
+        draw_sprite(screen, shot ? "./art/gun_shot.bmp" : "./art/gun.bmp", (SCREEN_WIDTH/2) + rotation_direction * -max_gun_tilt_x, gun_tilt_y - max_gun_tilt_y);
 
-        create_minimap(player_x, player_y, enemies, num_of_enemies, screen);
+        if (health <= 0) {
+            break;
+        }
+        for (int i = 0; i < health; ++i) {
+            draw_sprite(screen, "./art/heart.bmp", 48 + 76 * i, 16);
+        }
+
+        create_minimap(player_x, player_y, enemies, enemies_length, screen, player_angle);
 
         // render the current frame
         SDL_UpdateTexture(texture, NULL, screen, SCREEN_WIDTH * sizeof(int));
