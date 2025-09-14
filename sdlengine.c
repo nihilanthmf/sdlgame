@@ -54,7 +54,7 @@ int create_window(SDL_Window **window, SDL_Renderer **renderer) {
         return 1;
     }
 
-    *renderer = SDL_CreateRenderer(*window, -1, SDL_RENDERER_ACCELERATED);
+    *renderer = SDL_CreateRenderer(*window, -1, SDL_RENDERER_PRESENTVSYNC);
     if (!*renderer) {
         SDL_Log("SDL_CreateRenderer failed: %s", SDL_GetError());
         SDL_Quit();
@@ -129,8 +129,7 @@ void create_minimap(float player_x, float player_y, Enemy enemies[], int enemies
     }
 }
 
-void draw_sprite(int screen[], char path_to_sprite[], int pos_x, int pos_y) {
-    SDL_Surface *sprite = SDL_LoadBMP(path_to_sprite);
+void draw_sprite(int screen[], SDL_Surface* sprite, int pos_x, int pos_y) {
     int *pixels = (int*)sprite->pixels;
     int w = sprite->w;
     int h = sprite->h;
@@ -208,7 +207,7 @@ void detect_enemies(int x, int y, int enemies_length, Enemy enemies[], int wall_
     }
 }
 
-int main() {
+int main(int argc, char **argv) {
     SDL_Window *window;
     SDL_Renderer *renderer;
     bool running = true;
@@ -241,10 +240,15 @@ int main() {
 
     int gun_tilt_y = 0;
 
-    const int enemies_length = 1;
+    enum { enemies_length = 1 };
     Enemy enemies[enemies_length] = {
         {10 * TILE_SIZE, 1.5 * TILE_SIZE, 10, false, false, 0, 10}
     };
+
+    // loading sprites
+    SDL_Surface *gun_sprite = SDL_LoadBMP("./art/gun.bmp");
+    SDL_Surface *gun_shot_sprite = SDL_LoadBMP("./art/gun_shot.bmp");
+    SDL_Surface *heart_sprite = SDL_LoadBMP("./art/heart.bmp");
 
     create_window(&window, &renderer);
 
@@ -320,7 +324,7 @@ int main() {
                 detect_enemies(x, y, enemies_length, enemies, wall_distance, shot, fabsf(player_angle - ray_angle));
             }
 
-            int height = wall_height_percentage * (SCREEN_HEIGHT * TILE_SIZE / wall_distance) + abs(SCREEN_WIDTH / 2 - pixel) * 0.03;
+            int height = wall_height_percentage * (SCREEN_HEIGHT * TILE_SIZE / wall_distance);
             // the farther the wall the darker it is
             int color = wall_distance >= rendering_distance_percentage * wall_color ? 0 : wall_color - wall_distance / rendering_distance_percentage;
             draw_vertical_line(screen, pixel, height, wall_number * height, color, color, color);
@@ -339,13 +343,13 @@ int main() {
             gun_tilt_y = abs(direction) * (gun_tilt_y == max_gun_tilt_y ? 0 : max_gun_tilt_y);
             gun_animation_last_timestep = current_frame_time;
         }
-        draw_sprite(screen, shot ? "./art/gun_shot.bmp" : "./art/gun.bmp", (SCREEN_WIDTH/2) + rotation_direction * -max_gun_tilt_x, gun_tilt_y - max_gun_tilt_y);
+        draw_sprite(screen, shot ? gun_shot_sprite : gun_sprite, (SCREEN_WIDTH/2) + rotation_direction * -max_gun_tilt_x, gun_tilt_y - max_gun_tilt_y);
 
         if (health <= 0) {
             break;
         }
         for (int i = 0; i < health; ++i) {
-            draw_sprite(screen, "./art/heart.bmp", 48 + 76 * i, 16);
+            draw_sprite(screen, heart_sprite, 48 + 76 * i, 16);
         }
 
         create_minimap(player_x, player_y, enemies, enemies_length, screen, player_angle);
@@ -366,4 +370,6 @@ int main() {
 
         SDL_Delay(10);
     }
+
+    return 0;
 }
